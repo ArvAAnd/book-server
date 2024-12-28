@@ -159,4 +159,4 @@ def get_genres_books():
         return jsonify([dict(book) for book in books])
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
