@@ -1,31 +1,9 @@
-# from flask import Flask, jsonify
 import sqlite3
+from bs4 import BeautifulSoup
 from flask_cors import CORS
-# import logging
-
-# app = Flask(__name__)
-# CORS(app)
-# logging.basicConfig(level = logging.DEBUG)
-
-# @app.route('/get-html', methods=['GET'])
-# def serve_html():
-#     try:
-#         # Read the HTML content from the file
-#         with open('books/The_Plagiarist__Wen_Chao_Gong__CHernoknichnik_v_Mire_Magov__LP__Readli.Net_645528_original_39a8a.html', 'r', encoding='utf-8') as file:
-#             html_content = file.read()
-#         return jsonify({"data": html_content})
-#     except FileNotFoundError:
-#         return jsonify({"data": "HTML file not found"})
-
-# @app.route('/')
-# def home():
-#     return "Welcome to the home page!"
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
-
 from flask import Flask, request, jsonify, stream_with_context, Response
 from lxml import etree
+from pathlib import Path
 
 app = Flask(__name__)
 CORS(app)
@@ -87,19 +65,57 @@ def upload_file():
     fb2_file = request.files.get("file")
     file_path = f"./uploads/{fb2_file.filename}"
     fb2_file.save(file_path)
-    
+
+    html_content = parse_fb2_to_html(file_path)
+    #html_path = f"./books/{fb2_file.filename}.html"
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
+     # Разделяем HTML на страницы (например, по параграфам)
+    page_size = 5000  # Ориентировочный размер страницы в символах
+    pages = []
+    current_page = ""
+    current_size = 0
+
+    for element in soup.find_all(True):  # Проходим по всем тегам
+        element_str = str(element)
+        if current_size + len(element_str) > page_size:
+            # Завершаем текущую страницу
+            pages.append(current_page)
+            current_page = ""
+            current_size = 0
+        current_page += element_str
+        current_size += len(element_str)
+
+    # Добавляем последнюю страницу
+    if current_page:
+        pages.append(current_page)
+
+    # Создаем папку для книги
+    output_dir = Path(f"./books/{fb2_file.filename}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Сохраняем страницы в файлы
+    for i, page_content in enumerate(pages):
+        page_file = output_dir / f"{i + 1}.html"
+        with open(page_file, "w", encoding="utf-8") as page:
+            page.write(page_content)
+
+    # with open(html_path, 'w', encoding='utf-8') as file:
+    #     file.write(html_content)
+
     name = request.form.get("name")
 
     with get_connect() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO books (title, file_path) VALUES (?, ?)", (name, file_path))
+        #cursor.execute("INSERT INTO books (title, file_path) VALUES (?, ?)", (name, file_path))
+        cursor.execute("INSERT INTO books (title, file_path) VALUES (?, ?)", (name, html_path))
+        
         conn.commit()
     return jsonify({"message": "Файл успешно загружен"}), 200
 
 @app.route("/get-html/<int:book_id>", methods=["GET"])
 def get_html(book_id):
-    print(request)
-    print(book_id)
     file_path = ""
     #with open('./listOfBooks.txt', 'r', encoding='utf-8') as file:
     with get_connect() as conn:
@@ -123,18 +139,22 @@ def get_html(book_id):
             # Если книга не найдена
             print("Книга не найдена")
             return jsonify({"error": "Книга не найдена"}), 404
-    html_content = parse_fb2_to_html(file_path)
+    #html_content = parse_fb2_to_html(file_path)
+    html_content = ""
+    with open(file_path, encoding='utf-8') as file:
+        html_content = file.read()
     if not html_content:
         print("Ошибка при обработке файла")
         return jsonify({"error": "Ошибка при обработке файла"}), 500
 
-    # Возвращаем HTML контент частями
+    #Возвращаем HTML контент частями
     def generate_html():
         chunk_size = 1024  # Размер чанка в байтах
         for i in range(0, len(html_content), chunk_size):
             yield html_content[i:i + chunk_size]
 
     return Response(stream_with_context(generate_html()), content_type="text/html")
+    #return html_content
 
 @app.route("/get-all-books", methods=["GET"])
 def get_books():
