@@ -10,7 +10,8 @@ cursor.execute('''
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         genre TEXT,
-        file_path TEXT NOT NULL
+        file_path TEXT NOT NULL,
+        pages_amount INTEGER
     )
 ''')
 db.commit()

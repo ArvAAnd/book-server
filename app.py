@@ -72,7 +72,7 @@ def upload_file():
     soup = BeautifulSoup(html_content, "html.parser")
 
      # Разделяем HTML на страницы (например, по параграфам)
-    page_size = 5000  # Ориентировочный размер страницы в символах
+    page_size = 10000  # Ориентировочный размер страницы в символах
     pages = []
     current_page = ""
     current_size = 0
@@ -109,51 +109,57 @@ def upload_file():
     with get_connect() as conn:
         cursor = conn.cursor()
         #cursor.execute("INSERT INTO books (title, file_path) VALUES (?, ?)", (name, file_path))
-        cursor.execute("INSERT INTO books (title, file_path) VALUES (?, ?)", (name, html_path))
-        
+        cursor.execute("INSERT INTO books (title, file_path, pages_amount) VALUES (?, ?, ?)", (name, f"./books/{fb2_file.filename}", len(pages)))
+
         conn.commit()
-    return jsonify({"message": "Файл успешно загружен"}), 200
+    return jsonify({"message": "File uploaded successfully"}), 200
 
 @app.route("/get-html/<int:book_id>", methods=["GET"])
 def get_html(book_id):
+    try:
+        page = str(request.args.get("page", 1))  # Номер страницы, по умолчанию 1
+        #page_size = int(request.args.get("page_size", 1024))  # Количество символов на странице, по умолчанию 1024
+    except ValueError:
+        return jsonify({"error": "Uncorrect page number"}), 400
     file_path = ""
     #with open('./listOfBooks.txt', 'r', encoding='utf-8') as file:
     with get_connect() as conn:
         #books = file.readlines()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM books")
-        books = cursor.fetchall()
-        for book in books:
-            # Разделяем строку по последнему ":" и получаем ID
-            # parts = book.strip().rsplit(':')
-            # print(parts)
-            #if len(parts) == 2 and parts[0] == str(book_id):
-                # Используем путь из первой части строки
-                #print("Путь к файлу: " + parts[1].strip())
-                #file_path = parts[1].strip()
-                #break
-            if book['id'] == book_id:
-                file_path = book['file_path']
-                break
-        if file_path == "":
+        cursor.execute("SELECT file_path, pages_amount FROM books WHERE id = ?", (book_id,))
+        result = cursor.fetchone()
+        file_path, pages = (result['file_path'], result['pages_amount']) if result else (None, None)
+        if file_path == None:
             # Если книга не найдена
-            print("Книга не найдена")
-            return jsonify({"error": "Книга не найдена"}), 404
+            print("The book not found")
+            return jsonify({"error": "The book not found"}), 404
+        if pages == None:
+            print("Book have no pages")
+            return jsonify({"error": "Book have no pages"}), 404
     #html_content = parse_fb2_to_html(file_path)
-    html_content = ""
-    with open(file_path, encoding='utf-8') as file:
-        html_content = file.read()
-    if not html_content:
-        print("Ошибка при обработке файла")
-        return jsonify({"error": "Ошибка при обработке файла"}), 500
+    
+    page_content = ""
+    with open(file_path + "/" + page + ".html", encoding='utf-8') as file:
+        page_content = file.read()
+    
+    # html_content = ""
+    # with open(file_path, encoding='utf-8') as file:
+    #     html_content = file.read()
+    if not page_content:
+        print("Error during processing")
+        return jsonify({"error": "Error during processing"}), 500
+
+    return jsonify({'content': page_content,
+                    'pagesAmount': pages,
+                    })
 
     #Возвращаем HTML контент частями
-    def generate_html():
-        chunk_size = 1024  # Размер чанка в байтах
-        for i in range(0, len(html_content), chunk_size):
-            yield html_content[i:i + chunk_size]
+    # def generate_html():
+    #     chunk_size = 1024  # Размер чанка в байтах
+    #     for i in range(0, len(html_content), chunk_size):
+    #         yield html_content[i:i + chunk_size]
 
-    return Response(stream_with_context(generate_html()), content_type="text/html")
+    # return Response(stream_with_context(generate_html()), content_type="text/html")
     #return html_content
 
 @app.route("/get-all-books", methods=["GET"])
